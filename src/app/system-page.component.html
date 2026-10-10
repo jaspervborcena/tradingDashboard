@@ -1,0 +1,49 @@
+<section class="page-heading">
+  <div><p class="eyebrow">OPERATIONS / READ ONLY</p><h1>System</h1><p class="heading-copy">Scanner configuration and last reported activity.</p></div>
+  <button class="refresh-button" type="button" (click)="refresh()" [disabled]="loading()" aria-label="Refresh system status" title="Refresh status">↻</button>
+</section>
+
+@if (error()) { <div class="page-alert" role="alert"><span class="alert-symbol">!</span><span>{{ error() }}</span></div> }
+@if (loading()) {
+  <section class="system-state" aria-live="polite"><span class="loader-mark">S</span><strong>Reading scanner configuration…</strong></section>
+} @else if (!config() && !error()) {
+  <section class="system-state"><span class="empty-mark">!</span><strong>No app_config document found</strong><p>Scanner status is unavailable until the backend writes configuration.</p></section>
+} @else if (config()) {
+  <section class="system-panel">
+    <div class="system-panel-heading"><div><p class="eyebrow">LIVE CONFIGURATION</p><h2>Scanner state</h2></div><span class="read-only-tag">EDITABLE</span></div>
+    <form class="config-editor" (ngSubmit)="saveConfig()">
+      <div class="field-row">
+        <label class="field-label">Enabled</label>
+        <label class="switch">
+          <input type="checkbox" name="enabled" [(ngModel)]="enabled" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="field-row">
+        <label class="field-label" for="scanner-mode">Mode</label>
+        <select id="scanner-mode" name="mode" [(ngModel)]="mode">
+          <option value="test">test</option>
+          <option value="live">live</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label" for="scanner-interval">Interval (minutes)</label>
+        <input id="scanner-interval" name="intervalMinutes" type="number" min="1" step="1" [(ngModel)]="intervalMinutes" />
+      </div>
+      <div class="field-row field-row-actions">
+        <span class="config-status">{{ enabled ? 'Scanner enabled' : 'Scanner disabled' }}</span>
+        <button class="button button-primary" type="submit" [disabled]="saving()">
+          <span aria-hidden="true">✓</span> {{ saving() ? 'Saving…' : 'Save config' }}
+        </button>
+      </div>
+    </form>
+    <dl class="config-grid">
+      <div><dt>Enabled</dt><dd><span class="state-dot" [class.state-off]="config()?.['enabled'] !== true"></span>{{ config()?.['enabled'] === true ? 'Enabled' : config()?.['enabled'] === false ? 'Disabled' : 'Not configured' }}</dd></div>
+      <div><dt>Mode</dt><dd>{{ config()?.['mode'] || 'Not configured' }}</dd></div>
+      <div><dt>Minimum interval</dt><dd>{{ config()?.['interval_minutes'] ?? 'Not configured' }}{{ config()?.['interval_minutes'] ? ' minutes' : '' }}</dd></div>
+      <div><dt>Last run recorded</dt><dd>{{ lastRun() ? (lastRun() | date:'yyyy-MM-dd HH:mm:ss') : 'Not recorded' }}</dd></div>
+    </dl>
+  </section>
+  <section class="scheduler-note"><span class="scheduler-icon">◷</span><div><strong>Trigger schedule</strong><p>Cloud Scheduler triggers every 5 minutes. <code>interval_minutes</code> is an additional minimum-interval gate; it does not make the trigger run more frequently.</p></div></section>
+  <section class="activity-panel"><div class="activity-heading"><div><p class="eyebrow">ACTIVITY</p><h2>Latest scanner status</h2></div></div><p class="activity-copy">The current <code>app_config</code> exposes <code>last_run_at</code>, but does not distinguish successful runs from failed scans. Add a UI-facing status or error record to show reliable outcomes here.</p><div class="activity-result"><span class="activity-indicator"></span><span>{{ lastRun() ? 'Last run time is available; outcome is not recorded.' : 'No scanner activity time is recorded.' }}</span></div></section>
+}

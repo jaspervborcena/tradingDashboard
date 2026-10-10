@@ -1,0 +1,11 @@
+.page-heading { margin-bottom: 23px; }
+.page-heading .eyebrow { margin-bottom: 8px; }
+.page-heading h1 { margin: 0; color: #22342a; font-family: 'DM Sans', sans-serif; font-size: 30px; font-weight: 500; }
+.heading-copy { margin: 7px 0 0; color: #78857c; font-size: 12px; }
+.unavailable-panel { display: grid; min-height: 370px; align-content: center; justify-items: center; padding: 35px; background: #fff; border: 1px solid #e1e5dd; border-radius: 5px; text-align: center; }
+.unavailable-icon { display: grid; width: 44px; height: 44px; place-items: center; color: #8c7650; background: #f7f1e5; border-radius: 50%; font-family: 'IBM Plex Mono', monospace; font-size: 23px; }
+.unavailable-panel .eyebrow { margin: 18px 0 8px; color: #9b8050; }
+.unavailable-panel h2 { margin: 0; color: #34463b; font-family: 'DM Sans', sans-serif; font-size: 19px; font-weight: 550; }
+.unavailable-panel > p:not(.eyebrow) { max-width: 510px; margin: 10px 0 20px; color: #7d8980; font-size: 11px; line-height: 1.7; }
+.guardrail { display: flex; max-width: 630px; align-items: flex-start; gap: 10px; padding: 12px 14px; color: #795f2d; background: #fff8e7; border: 1px solid #eee2bf; border-radius: 4px; font-size: 10px; line-height: 1.6; text-align: left; }
+.guardrail-mark { display: grid; width: 17px; height: 17px; flex: 0 0 auto; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-family: 'IBM Plex Mono', monospace; font-size: 10px; }
