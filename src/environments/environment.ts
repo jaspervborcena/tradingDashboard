@@ -8,6 +8,7 @@ export const environment = {
     appId: '1:1081461650786:web:26805faea3de0ed264e83b',
     measurementId: 'G-X164QJVVK8',
   },
+  binanceApiUrl: 'https://asia-east1-mytradingapp-50d29.cloudfunctions.net/binanceApi',
   firestore: {
     eventTimeField: 'captured_at',
   },

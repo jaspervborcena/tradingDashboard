@@ -3,6 +3,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { BinanceApiService, type BinanceApiAccount, type BinanceApiStatus } from './binance-api.service';
 import { firebaseApp } from './firebase-client';
 import { FirestoreDataService, type Holding } from './firestore-data.service';
 import { MarketDataService, ema, rsi, type Candle, type Coin, type OrderBook, type TrendMetric } from './market-data.service';
@@ -17,6 +18,7 @@ export class DashboardPage {
   private readonly route = inject(ActivatedRoute);
   private readonly market = inject(MarketDataService);
   private readonly data = inject(FirestoreDataService);
+  private readonly binanceApi = inject(BinanceApiService);
   readonly page = signal('overview');
   readonly coins = signal<Coin[]>([]);
   readonly favorites = signal<string[]>([]);
@@ -29,6 +31,12 @@ export class DashboardPage {
   readonly walletBalance = signal(0);
   readonly binanceConnected = signal(false);
   readonly binanceBalances = signal<Array<{asset:string;free:number;locked:number}>>([]);
+  readonly serverBinanceStatus = signal<BinanceApiStatus | null>(null);
+  readonly serverBinanceAccount = signal<BinanceApiAccount | null>(null);
+  readonly serverBinanceStatusError = signal('');
+  readonly serverBinanceAccountError = signal('');
+  readonly serverBinanceLoading = signal(false);
+  readonly serverBinanceLoaded = signal(false);
   readonly error = signal('');
   readonly integrationError = signal('');
   readonly loading = signal(true);
@@ -67,6 +75,7 @@ export class DashboardPage {
       this.coins.set(coins); this.favorites.set(favorites); this.holdings.set(holdings); this.walletBalance.set(wallet.balanceUsdt);
       try { const status = await this.call<{}, {connected:boolean}>('getBinanceStatus', {}); this.binanceConnected.set(status.connected); if (status.connected) await this.refreshBinanceAccount(); }
       catch (error) { this.integrationError.set(error instanceof Error ? error.message : 'Binance link status is unavailable.'); }
+      if (this.page() === 'settings') await this.refreshServerBinanceAccount();
       if (this.page() === 'coin') await this.loadCandles();
       if (this.page() === 'market-trends') {
         const [metrics] = await Promise.all([this.market.getTrendMetrics(coins)]);
@@ -106,6 +115,10 @@ export class DashboardPage {
     if (filter === 'losers') return rows([...ranked].sort((a, b) => a.change - b.change).slice(0, 30));
     if (filter === 'volume') return rows(this.trendMetrics().filter(row => row.volumeRatio >= 1.5).sort((a, b) => b.volumeRatio - a.volumeRatio).map(row => row.coin));
     if (filter === 'breakout') return rows(this.trendMetrics().filter(row => row.breakout).map(row => row.coin));
+    if (filter.startsWith('change-')) {
+      const direction = filter.slice('change-'.length);
+      return rows(ranked.filter(coin => direction === 'positive' ? coin.change > 0 : coin.change < 0));
+    }
     return rows(ranked.filter(coin => coin.change > 0).sort((a, b) => b.change - a.change).slice(0, 30));
   }
   get totalValue(): number { return this.holdings().reduce((sum, h) => sum + h.quantity * (this.coin(h.symbol)?.price ?? h.buyPrice), 0); }
@@ -141,6 +154,27 @@ export class DashboardPage {
   get estimatedQuantity(): number { const ask = this.orderBook()?.asks[0]?.price ?? this.coin(this.selectedSymbol)?.price ?? 0; return ask > 0 ? Number(this.orderSpend) / ask : 0; }
   get paperSpend(): number { return Number(this.quantity) * Number(this.buyPrice); }
   get binanceUsdt(): number { const row = this.binanceBalances().find(item => item.asset === 'USDT'); return row ? row.free : 0; }
+  async refreshServerBinanceAccount(): Promise<void> {
+    this.serverBinanceLoading.set(true);
+    this.serverBinanceStatusError.set('');
+    this.serverBinanceAccountError.set('');
+    this.serverBinanceStatus.set(null);
+    this.serverBinanceAccount.set(null);
+    this.serverBinanceLoaded.set(false);
+    try {
+      this.serverBinanceStatus.set(await this.binanceApi.getStatus());
+    } catch (error) {
+      this.serverBinanceStatusError.set(error instanceof Error ? error.message : 'Could not load the Binance integration status.');
+      this.serverBinanceLoading.set(false);
+      return;
+    }
+    try {
+      this.serverBinanceAccount.set(await this.binanceApi.getAccount());
+      this.serverBinanceLoaded.set(true);
+    } catch (error) {
+      this.serverBinanceAccountError.set(error instanceof Error ? error.message : 'Could not load Binance account data.');
+    } finally { this.serverBinanceLoading.set(false); }
+  }
   async refreshBinanceAccount(): Promise<void> { const result = await this.call<{}, {connected:boolean;balances:Array<{asset:string;free:number;locked:number}>}>('getBinanceAccount', {}); this.binanceConnected.set(result.connected); this.binanceBalances.set(result.balances ?? []); }
   async connectBinance(): Promise<void> {
     this.connectionBusy.set(true); this.connectionMessage.set(''); this.integrationError.set('');
