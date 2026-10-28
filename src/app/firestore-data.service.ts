@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { collection, deleteDoc, doc, getDoc, getDocs, orderBy, query, runTransaction, setDoc, type DocumentData } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, orderBy, query, runTransaction, setDoc, writeBatch, type DocumentData } from 'firebase/firestore';
 import { firestore } from './firebase-client';
 import { AuthService } from './auth.service';
 import { inject } from '@angular/core';
@@ -10,17 +10,30 @@ export interface Wallet { balanceUsdt: number; }
 @Injectable({ providedIn: 'root' })
 export class FirestoreDataService {
   private readonly auth = inject(AuthService);
+  private readonly syncedWatchlists = new Set<string>();
   private get db() { if (!firestore) throw new Error('Firebase is not configured.'); return firestore; }
   private get uid() { const uid = this.auth.user()?.uid; if (!uid) throw new Error('Sign in to access your data.'); return uid; }
   private userCollection(name: string) { return collection(this.db, 'users', this.uid, name); }
 
   async getFavorites(): Promise<string[]> {
-    const snap = await getDocs(this.userCollection('favorites'));
-    return snap.docs.map((item) => item.id);
+    const userId = this.uid;
+    const snap = await getDocs(collection(this.db, 'users', userId, 'favorites'));
+    const symbols = snap.docs.map((item) => item.id);
+    if (!this.syncedWatchlists.has(userId)) {
+      await setDoc(doc(this.db, 'users', userId), { watchlist: symbols }, { merge: true });
+      this.syncedWatchlists.add(userId);
+    }
+    return symbols;
   }
   async toggleFavorite(symbol: string, favorite: boolean): Promise<void> {
-    const ref = doc(this.db, 'users', this.uid, 'favorites', symbol);
-    if (favorite) await deleteDoc(ref); else await setDoc(ref, { symbol, addedAt: new Date().toISOString() });
+    const userId = this.uid;
+    const favoriteRef = doc(this.db, 'users', userId, 'favorites', symbol);
+    const userRef = doc(this.db, 'users', userId);
+    const batch = writeBatch(this.db);
+    if (favorite) batch.delete(favoriteRef);
+    else batch.set(favoriteRef, { symbol, addedAt: new Date().toISOString() });
+    batch.set(userRef, { watchlist: favorite ? arrayRemove(symbol) : arrayUnion(symbol) }, { merge: true });
+    await batch.commit();
   }
   async getHoldings(): Promise<Holding[]> {
     const snap = await getDocs(query(this.userCollection('portfolio'), orderBy('boughtAt', 'desc')));

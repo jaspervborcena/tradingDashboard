@@ -3,7 +3,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { BinanceApiService, type BinanceApiAccount, type BinanceApiStatus } from './binance-api.service';
+import { BinanceApiService, type BinanceApiAccount, type BinanceApiStatus, type CoinGeckoMarketData, type CoinGeckoMarketRow, type CryptoCategoryData, type SharedBinanceOrder, type SharedBinanceOrderRequest, type WatchlistAnalysis } from './binance-api.service';
 import { firebaseApp } from './firebase-client';
 import { FirestoreDataService, type Holding } from './firestore-data.service';
 import { MarketDataService, ema, rsi, type Candle, type Coin, type OrderBook, type TrendMetric } from './market-data.service';
@@ -26,6 +26,9 @@ export class DashboardPage {
   readonly candles = signal<Candle[]>([]);
   readonly orderBook = signal<OrderBook | null>(null);
   readonly trendMetrics = signal<TrendMetric[]>([]);
+  readonly marketCapData = signal<CoinGeckoMarketData | null>(null);
+  readonly cryptoCategoryData = signal<CryptoCategoryData | null>(null);
+  readonly marketMetadataError = signal('');
   readonly portfolioSignals = signal<Record<string, Record<string, {signal:'BUY'|'SELL'|'HOLD'|'UNAVAILABLE'; reason:string}>>>({});
   readonly portfolioSignalsLoading = signal(false);
   readonly watchSignals = signal<Record<string,{signal:string;reason:string;ema20:number;rsi14:number}>>({});
@@ -37,6 +40,8 @@ export class DashboardPage {
   readonly serverBinanceAccount = signal<BinanceApiAccount | null>(null);
   readonly serverBinanceStatusError = signal('');
   readonly serverBinanceAccountError = signal('');
+  readonly serverEgressIp = signal('');
+  readonly serverEgressIpError = signal('');
   readonly serverBinanceLoading = signal(false);
   readonly serverBinanceLoaded = signal(false);
   readonly error = signal('');
@@ -44,6 +49,7 @@ export class DashboardPage {
   readonly loading = signal(true);
   readonly analysisLoading = signal(false);
   readonly analysis = signal('');
+  readonly analysisResult = signal<WatchlistAnalysis | null>(null);
   readonly coinSymbol = signal('BTCUSDT');
   readonly query = signal('');
   readonly interval = signal('1d');
@@ -52,6 +58,10 @@ export class DashboardPage {
   readonly connectionBusy = signal(false);
   readonly connectionMessage = signal('');
   readonly sellBusy = signal(false);
+  readonly sharedOrderBusy = signal(false);
+  readonly sharedOrderReviewed = signal<SharedBinanceOrderRequest | null>(null);
+  readonly sharedOrderError = signal('');
+  readonly sharedOrderMessage = signal('');
   showHoldingForm = false;
   showSellPicker = false;
   showSellForm = false;
@@ -66,6 +76,9 @@ export class DashboardPage {
   orderSpend = '25';
   binanceApiKey = '';
   binanceApiSecret = '';
+  sharedOrderSide: 'BUY' | 'SELL' = 'BUY';
+  sharedOrderSymbol = 'BTCUSDT';
+  sharedOrderAmount = '';
 
   constructor() {
     this.route.data.subscribe(data => this.page.set(String(data['page'] ?? 'overview')));
@@ -82,13 +95,22 @@ export class DashboardPage {
       const [coins, favorites, holdings, wallet] = await Promise.all([this.market.getTickers(), this.data.getFavorites(), this.data.getHoldings(), this.data.getWallet()]);
       this.coins.set(coins); this.favorites.set(favorites); this.holdings.set(holdings); this.walletBalance.set(wallet.balanceUsdt);
       if (this.page() === 'overview') await this.loadPortfolioSignals();
-      try { const status = await this.call<{}, {connected:boolean}>('getBinanceStatus', {}); this.binanceConnected.set(status.connected); if (status.connected) await this.refreshBinanceAccount(); }
+      try { const status = await this.binanceApi.getStatus(); this.binanceConnected.set(status.connected); if (status.connected) await this.refreshBinanceAccount(); }
       catch (error) { this.integrationError.set(error instanceof Error ? error.message : 'Binance link status is unavailable.'); }
       if (this.page() === 'settings') await this.refreshServerBinanceAccount();
       if (this.page() === 'coin') await this.loadCandles();
       if (this.page() === 'market-trends') {
+        this.marketMetadataError.set('');
         const [metrics] = await Promise.all([this.market.getTrendMetrics(coins)]);
         this.trendMetrics.set(metrics);
+        const [marketCap, categories] = await Promise.allSettled([
+          this.binanceApi.getMarketCapData(),
+          this.binanceApi.getCryptoCategories(),
+        ]);
+        if (marketCap.status === 'fulfilled') this.marketCapData.set(marketCap.value);
+        else this.marketMetadataError.set(marketCap.reason instanceof Error ? marketCap.reason.message : 'CoinGecko market-cap data is unavailable.');
+        if (categories.status === 'fulfilled') this.cryptoCategoryData.set(categories.value);
+        else this.marketMetadataError.update(message => [message, categories.reason instanceof Error ? categories.reason.message : 'CoinGecko categories are unavailable.'].filter(Boolean).join(' '));
       }
       if (this.page() === 'signals' || this.page() === 'favorites') await this.loadWatchlistSignals();
     } catch (error) { this.error.set(error instanceof Error ? error.message : 'Could not load the dashboard.'); }
@@ -125,14 +147,37 @@ export class DashboardPage {
   }
   allocationColor(index:number): string { return ['#06d6a0','#4d8dff','#f6ae2d','#a779ff','#ff6878','#29c2d1','#e67843','#90a4b8'][index%8]; }
   portfolioSignal(symbol:string,period:string): {signal:'BUY'|'SELL'|'HOLD'|'UNAVAILABLE';reason:string}|undefined { return this.portfolioSignals()[symbol]?.[period]; }
-  get trendRows(): Array<{coin:Coin;metric:TrendMetric|null;volumeRank:number}> {
+  get uniqueMarketCapBySymbol(): Map<string, CoinGeckoMarketRow> {
+    const rows = [
+      ...(this.marketCapData()?.largeCap ?? []),
+      ...(this.marketCapData()?.midCap ?? []),
+      ...(this.marketCapData()?.smallCap ?? []),
+      ...(this.marketCapData()?.meme ?? []),
+    ];
+    const grouped = new Map<string, Map<string, CoinGeckoMarketRow>>();
+    for (const row of rows) {
+      const symbol = row.symbol.toUpperCase();
+      const byId = grouped.get(symbol) ?? new Map<string, CoinGeckoMarketRow>();
+      byId.set(row.id, row);
+      grouped.set(symbol, byId);
+    }
+    return new Map([...grouped].filter(([, byId]) => byId.size === 1).map(([symbol, byId]) => [symbol, [...byId.values()][0]]));
+  }
+  get trendCategoryTags(): string[] {
+    return this.cryptoCategoryData()?.categories.map(category => category.tag) ?? [];
+  }
+  get trendRows(): Array<{coin:Coin;metric:TrendMetric|null;volumeRank:number;marketCap:CoinGeckoMarketRow|null;categories:string[]}> {
     const filter = this.trendFilter();
     const ranked = [...this.coins()].sort((a, b) => b.quoteVolume - a.quoteVolume);
     const metrics = new Map(this.trendMetrics().map(metric => [metric.coin.symbol, metric]));
+    const marketCapBySymbol = this.uniqueMarketCapBySymbol;
+    const tagsBySymbol = this.cryptoCategoryData()?.tagsBySymbol ?? {};
     const rows = (coins: Coin[]) => coins.map(coin => ({
       coin,
       metric: metrics.get(coin.symbol) ?? null,
       volumeRank: ranked.findIndex(item => item.symbol === coin.symbol) + 1,
+      marketCap: marketCapBySymbol.get(coin.base) ?? null,
+      categories: tagsBySymbol[coin.base] ?? [],
     }));
 
     if (filter.startsWith('volume-')) {
@@ -151,6 +196,10 @@ export class DashboardPage {
     if (filter.startsWith('change-')) {
       const direction = filter.slice('change-'.length);
       return rows(ranked.filter(coin => direction === 'positive' ? coin.change > 0 : coin.change < 0));
+    }
+    if (filter.startsWith('category-')) {
+      const tag = filter.slice('category-'.length);
+      return rows(ranked.filter(coin => tagsBySymbol[coin.base]?.includes(tag)));
     }
     return rows(ranked.filter(coin => coin.change > 0).sort((a, b) => b.change - a.change).slice(0, 30));
   }
@@ -245,20 +294,76 @@ export class DashboardPage {
     this.serverBinanceAccountError.set('');
     this.serverBinanceStatus.set(null);
     this.serverBinanceAccount.set(null);
+    this.serverEgressIp.set('');
+    this.serverEgressIpError.set('');
     this.serverBinanceLoaded.set(false);
-    try {
-      this.serverBinanceStatus.set(await this.binanceApi.getStatus());
-    } catch (error) {
-      this.serverBinanceStatusError.set(error instanceof Error ? error.message : 'Could not load the Binance integration status.');
-      this.serverBinanceLoading.set(false);
+    const [status, account, ip] = await Promise.allSettled([
+      this.binanceApi.getHttpStatus(),
+      this.binanceApi.getAccount(),
+      this.binanceApi.getEgressIp(),
+    ]);
+    if (status.status === 'fulfilled') this.serverBinanceStatus.set(status.value);
+    else this.serverBinanceStatusError.set(status.reason instanceof Error ? status.reason.message : 'Could not load the Binance integration status.');
+    if (account.status === 'fulfilled') {
+      this.serverBinanceAccount.set(account.value);
+      this.serverBinanceLoaded.set(true);
+    } else this.serverBinanceAccountError.set(account.reason instanceof Error ? account.reason.message : 'Could not load Binance account data.');
+    if (ip.status === 'fulfilled') this.serverEgressIp.set(ip.value.ip);
+    else this.serverEgressIpError.set(ip.reason instanceof Error ? ip.reason.message : 'Could not read the Functions egress IP.');
+    this.serverBinanceLoading.set(false);
+  }
+  reviewSharedOrder(): void {
+    this.sharedOrderError.set('');
+    this.sharedOrderMessage.set('');
+    const account = this.serverBinanceAccount();
+    if (!account?.connected) {
+      this.sharedOrderError.set('Load the shared Binance account successfully before reviewing a live order.');
       return;
     }
+    const amount = this.sharedOrderAmount.trim();
+    if (!/^[0-9]+(?:\.[0-9]+)?$/.test(amount) || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
+      this.sharedOrderError.set('Enter a positive amount using decimal digits only.');
+      return;
+    }
+    if (!/^[A-Z0-9]{2,18}USDT$/.test(this.sharedOrderSymbol) || /(UP|DOWN|BULL|BEAR)USDT$/.test(this.sharedOrderSymbol)) {
+      this.sharedOrderError.set('Choose a supported USDT-quoted Spot pair.');
+      return;
+    }
+    const balanceAsset = this.sharedOrderSide === 'BUY' ? 'USDT' : this.sharedOrderSymbol.slice(0, -4);
+    const available = account.balances.find(balance => balance.asset === balanceAsset)?.free ?? 0;
+    if (Number(amount) > available) {
+      this.sharedOrderError.set(`The shared account has only ${available} free ${balanceAsset}. Refresh balances or lower the amount.`);
+      return;
+    }
+    this.sharedOrderReviewed.set({
+      symbol: this.sharedOrderSymbol,
+      side: this.sharedOrderSide,
+      ...(this.sharedOrderSide === 'BUY' ? { quoteOrderQty: amount } : { quantity: amount }),
+      clientOrderId: crypto.randomUUID(),
+      confirm: true,
+    });
+  }
+  cancelSharedOrderReview(): void {
+    this.sharedOrderReviewed.set(null);
+    this.sharedOrderError.set('');
+  }
+  async submitSharedOrder(): Promise<void> {
+    const reviewed = this.sharedOrderReviewed();
+    if (!reviewed) return;
+    this.sharedOrderBusy.set(true);
+    this.sharedOrderError.set('');
     try {
-      this.serverBinanceAccount.set(await this.binanceApi.getAccount());
-      this.serverBinanceLoaded.set(true);
+      const result = await this.binanceApi.placeSharedOrder(reviewed);
+      this.sharedOrderReviewed.set(null);
+      this.sharedOrderAmount = '';
+      this.sharedOrderMessage.set(this.sharedOrderSuccessMessage(result));
+      await this.refreshServerBinanceAccount();
     } catch (error) {
-      this.serverBinanceAccountError.set(error instanceof Error ? error.message : 'Could not load Binance account data.');
-    } finally { this.serverBinanceLoading.set(false); }
+      this.sharedOrderError.set(`${error instanceof Error ? error.message : 'Shared account order failed.'} Keep this order ID for retries; do not create a new order after an uncertain result.`);
+    } finally { this.sharedOrderBusy.set(false); }
+  }
+  private sharedOrderSuccessMessage(result: SharedBinanceOrder): string {
+    return `${result.replayed ? 'Previously completed order confirmed' : 'Order accepted'}: ${result.side} ${result.symbol}, status ${result.status}, filled ${result.executedQty} for ${result.cummulativeQuoteQty} USDT.`;
   }
   async refreshBinanceAccount(): Promise<void> { const result = await this.call<{}, {connected:boolean;balances:Array<{asset:string;free:number;locked:number}>}>('getBinanceAccount', {}); this.binanceConnected.set(result.connected); this.binanceBalances.set(result.balances ?? []); }
   async connectBinance(): Promise<void> {
@@ -303,25 +408,19 @@ export class DashboardPage {
     this.portfolioSignals.set(result); this.portfolioSignalsLoading.set(false);
   }
   async analyze(): Promise<void> {
-    if (!firebaseApp) { this.error.set('Firebase must be configured before requesting analysis.'); return; }
-    this.analysisLoading.set(true); this.analysis.set(''); this.error.set('');
+    this.analysisLoading.set(true); this.analysis.set(''); this.analysisResult.set(null); this.error.set('');
     try {
-      const fn = httpsCallable(getFunctions(firebaseApp), 'analyzeWatchlist');
-      const monitored = await Promise.all(this.favorites().map(async symbol => {
-        const coin = this.coin(symbol);
-        if (!coin) return null;
-        const candles = await this.market.getCandles(symbol, '1d', 90);
-        const closes = candles.map(candle => candle.close);
-        return { symbol, name: coin.name, price: coin.price, change24h: coin.change, quoteVolume24h: coin.quoteVolume, high24h: coin.high, low24h: coin.low, ema20: ema(closes, 20).at(-1), ema50: ema(closes, 50).at(-1), rsi14: rsi(closes), recentCloses: closes.slice(-7) };
-      }));
-      const result = await fn({ coins: monitored.filter(Boolean), requestedAt: new Date().toISOString(), instruction: 'Summarize trend, momentum, notable risks, and possible support/resistance context. Use cautious language. This is informational market analysis, not financial advice.' });
-      const payload = result.data as { analysis?: string; signals?: Array<{symbol:string; signal:string; rationale:string}> };
-      this.analysis.set(payload.analysis ?? payload.signals?.map(s => `${s.symbol}: ${s.signal} — ${s.rationale}`).join('\n') ?? 'No analysis was returned.');
-    } catch (e) { this.error.set(e instanceof Error ? `${e.message} Ensure the analyzeWatchlist Firebase function is deployed.` : 'Analysis request failed.'); }
+      if (this.favorites().length > 20) {
+        throw new Error('The analysis service supports up to 20 assets. Reduce your favorites and try again.');
+      }
+      const result = await this.binanceApi.analyzeWatchlist(this.favorites());
+      this.analysisResult.set(result);
+      this.analysis.set(result.overview);
+    } catch (e) { this.error.set(e instanceof Error ? e.message : 'Analysis request failed.'); }
     finally { this.analysisLoading.set(false); }
   }
   format(value: number): string { return new Intl.NumberFormat('en-US', { maximumFractionDigits: value < 1 ? 6 : 2 }).format(value); }
   changeClass(value: number): string { return value >= 0 ? 'positive' : 'negative'; }
   magnitude(value: number): number { return Math.min(100, Math.abs(value) * 9); }
-  private call<I,O>(name:string,data:I):Promise<O> { if(!firebaseApp) return Promise.reject(new Error('Firebase is not configured.')); return httpsCallable<I,O>(getFunctions(firebaseApp),name)(data).then(result=>result.data); }
+  private call<I,O>(name:string,data:I):Promise<O> { if(!firebaseApp) return Promise.reject(new Error('Firebase is not configured.')); return httpsCallable<I,O>(getFunctions(firebaseApp, 'asia-east1'),name)(data).then(result=>result.data); }
 }
