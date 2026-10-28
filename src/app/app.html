@@ -1,91 +1,28 @@
 @if (auth.loading()) {
-  <main class="boot-state" aria-live="polite">
-    <span class="boot-mark">S</span>
-    <p>Connecting to scanner workspace</p>
-  </main>
+  <main class="boot-state" aria-live="polite"><span class="brand-mark">C</span><p>Loading CryptoIntel…</p></main>
 } @else if (!auth.user()) {
-  <main class="login-page">
-    <section class="login-aside" aria-label="Signal Monitor">
-      <div class="brand-lockup"><span class="brand-mark">S</span><span>Signal Monitor</span></div>
-      <div class="login-aside-copy">
-        <p class="eyebrow">SCANNER CONSOLE / READ ONLY</p>
-        <h1>Clarity on the signals.<br /><em>No execution layer.</em></h1>
-        <p>Market observations and strategy output, gathered in one quiet place.</p>
-      </div>
-      <div class="aside-foot"><span class="pulse-dot"></span> BINANCE SPOT TESTNET <span class="aside-separator">/</span> TEST MODE</div>
-    </section>
-    <section class="login-panel">
-      <div class="login-card">
-        <p class="eyebrow">SECURE ACCESS</p>
-        <h2>{{ authMode() === 'create' ? 'Create account' : 'Sign in' }}</h2>
-        <p class="login-copy">{{ authMode() === 'create' ? 'Create an account for the jasperpos-dev dashboard.' : 'Use your Firebase Authentication account to continue.' }}</p>
-        @if (!firebaseConfigured) {
-          <div class="notice notice-warning" role="status">
-            <strong>Firebase setup required</strong>
-            <span>Add your Firebase web app values in <code>src/environments/environment.ts</code> to enable sign-in.</span>
-          </div>
-        }
-        <form (ngSubmit)="submitAuth()">
-          <label for="email">Email address</label>
-          <input id="email" name="email" type="email" autocomplete="username" required [(ngModel)]="email" />
-          <label for="password">Password</label>
-          <input id="password" name="password" type="password" [attr.autocomplete]="authMode() === 'create' ? 'new-password' : 'current-password'" [attr.minlength]="authMode() === 'create' ? 8 : null" required [(ngModel)]="password" />
-          @if (authMode() === 'create') {
-            <label for="confirm-password">Confirm password</label>
-            <input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required [(ngModel)]="confirmPassword" />
-          }
-          @if (loginError) { <p class="form-error" role="alert">{{ loginError }}</p> }
-          <button class="button button-primary login-submit" type="submit" [disabled]="!firebaseConfigured || signingIn">
-            {{ signingIn ? (authMode() === 'create' ? 'Creating account…' : 'Signing in…') : (authMode() === 'create' ? 'Create account' : 'Continue securely') }} <span aria-hidden="true">↗</span>
-          </button>
-        </form>
-        @if (authMode() === 'create') {
-          <p class="signup-access-note">Every signed-in account currently has read-only access to scanner data in this development project.</p>
-        }
-        <p class="login-foot">
-          {{ authMode() === 'create' ? 'Already registered?' : 'New to the dashboard?' }}
-          <button class="mode-switch" type="button" (click)="setAuthMode(authMode() === 'create' ? 'login' : 'create')">{{ authMode() === 'create' ? 'Sign in' : 'Create account' }}</button>
-        </p>
-      </div>
-      <div class="login-panel-foot"><span>TRADING DASHBOARD</span><span>v0.1 / DEVELOPMENT</span></div>
-    </section>
+  <main class="login-page"><section class="login-aside"><div class="brand-lockup"><span class="brand-mark">C</span>CryptoIntel</div><div class="login-aside-copy"><p class="eyebrow">PERSONAL CRYPTO WORKSPACE</p><h1>Understand the market.<br/><em>Track your position.</em></h1><p>Live public market data, your own portfolio entries, and AI assisted market context in one dashboard.</p></div><div class="aside-foot"><span class="pulse-dot"></span> BINANCE PUBLIC DATA <span class="aside-separator">/</span> FIREBASE SECURED</div></section>
+    <section class="login-panel"><div class="login-card"><p class="eyebrow">SECURE ACCESS</p><h2>{{ authMode() === 'create' ? 'Create account' : 'Welcome back' }}</h2><p class="login-copy">{{ authMode() === 'create' ? 'Create your private CryptoIntel account.' : 'Sign in to your crypto workspace.' }}</p>
+      @if (!firebaseConfigured) { <div class="notice notice-warning" role="status"><strong>Firebase setup required</strong><span>Add your Firebase web app settings in <code>src/environments/environment.ts</code>.</span></div> }
+      <form (ngSubmit)="submitAuth()"><label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="username" required [(ngModel)]="email"/><label for="password">Password</label><input id="password" name="password" type="password" [attr.autocomplete]="authMode() === 'create' ? 'new-password' : 'current-password'" [attr.minlength]="authMode() === 'create' ? 8 : null" required [(ngModel)]="password"/>
+        @if (authMode() === 'create') { <label for="confirm-password">Confirm password</label><input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required [(ngModel)]="confirmPassword"/> }
+        @if (loginError) { <p class="form-error" role="alert">{{ loginError }}</p> }<button class="button button-primary login-submit" type="submit" [disabled]="!firebaseConfigured || signingIn">{{ signingIn ? 'Please wait…' : authMode() === 'create' ? 'Create account' : 'Sign in' }} <span>↗</span></button></form>
+      <p class="login-foot">{{ authMode() === 'create' ? 'Already registered?' : 'New to CryptoIntel?' }} <button class="mode-switch" type="button" (click)="setAuthMode(authMode() === 'create' ? 'login' : 'create')">{{ authMode() === 'create' ? 'Sign in' : 'Create account' }}</button></p></div><div class="login-panel-foot"><span>CRYPTOINTEL</span><span>PERSONAL DASHBOARD</span></div></section>
   </main>
 } @else {
-  <div class="app-frame">
-    <aside class="sidebar">
-      <a class="brand-lockup" routerLink="/overview" aria-label="Signal Monitor overview">
-        <span class="brand-mark">S</span><span>Signal Monitor</span>
-      </a>
-      <p class="nav-caption">WORKSPACE</p>
-      <nav class="primary-nav" aria-label="Main navigation">
-        <a routerLink="/overview" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">⌂</span>Overview</a>
-        <a routerLink="/markets" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">◷</span>Markets</a>
-        <a routerLink="/signals" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">⌁</span>Signals</a>
-        <a routerLink="/trades" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">↗</span>Trades <span class="nav-muted">N/A</span></a>
-      </nav>
-      <p class="nav-caption nav-caption-lower">MONITORING</p>
-      <nav class="primary-nav" aria-label="Monitoring navigation">
-        <a routerLink="/system" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">◉</span>System</a>
-      </nav>
-      <div class="sidebar-bottom">
-        <div class="environment-chip"><span class="pulse-dot"></span><span><strong>TEST MODE</strong><small>Spot Testnet</small></span></div>
-        <p class="read-only-note">READ ONLY<br />Signals are analysis, not orders.</p>
-      </div>
-    </aside>
-    <main class="main-column">
-      <header class="topbar">
-        <div class="topbar-context"><span class="topbar-kicker">SCANNER /</span><span class="topbar-current">{{ pageTitle() }}</span></div>
-        <div class="account-actions">
-          <span class="connection-label"><span class="connection-dot"></span> AUTHENTICATED</span>
-          <span class="account-email">{{ auth.user()?.email }}</span>
-          <button class="icon-button" type="button" (click)="signOut()" aria-label="Sign out" title="Sign out">↗</button>
-        </div>
-      </header>
-      @if (!firebaseConfigured) {
-        <div class="global-config-notice" role="status">Firebase is not configured. Add the web app settings to connect dashboard data.</div>
-      }
-      <div class="page-content"><router-outlet /></div>
-      <footer class="app-footer"><span>SCANNER OUTPUT · READ ONLY</span><span>Times shown in your local timezone</span></footer>
+  <div class="app-frame"><aside class="sidebar"><a class="brand-lockup" routerLink="/overview"><span class="brand-mark">C</span><span>CryptoIntel</span></a><p class="nav-caption">WORKSPACE</p><nav class="primary-nav" aria-label="Main navigation">
+    <a routerLink="/overview" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">⌂</span>Home</a>
+    <a routerLink="/top-10" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">◈</span>Top 10 Index</a>
+    <a routerLink="/market-trends" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">↗</span>Market Trends</a>
+    <a routerLink="/favorites" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">☆</span>Watchlist</a>
+    <a routerLink="/portfolio" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">▤</span>Portfolio</a>
+    <a routerLink="/signals" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">⌁</span>Trading Signals</a>
+    <a routerLink="/analytics" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">▥</span>Analytics</a>
+    <a routerLink="/settings" routerLinkActive="active" ariaCurrentWhenActive="page"><span class="nav-icon">⚙</span>Settings</a>
+  </nav><div class="sidebar-bottom"><div class="environment-chip"><span class="pulse-dot"></span><span><strong>MARKET DATA</strong><small>Binance · Public</small></span></div><p class="read-only-note">No automatic orders.<br/>Every real buy needs confirmation.</p></div></aside>
+    <main class="main-column"><header class="topbar"><div class="topbar-context"><span class="topbar-kicker">CRYPTOINTEL /</span><span class="topbar-current">{{ pageTitle() }}</span></div><div class="account-actions"><span class="connection-label"><span class="connection-dot"></span> CONNECTED</span><span class="account-email">{{ auth.user()?.email }}</span><button class="icon-button" type="button" (click)="signOut()" aria-label="Sign out" title="Sign out">↗</button></div></header>
+      @if (!firebaseConfigured) { <div class="global-config-notice">Firebase is not configured. Add the web app settings to store portfolio and favorites.</div> }
+      <div class="page-content"><router-outlet/></div><footer class="app-footer"><span>PUBLIC MARKET DATA · PERSONAL PORTFOLIO</span><span>Analysis only · Real orders need explicit confirmation</span></footer>
     </main>
   </div>
 }

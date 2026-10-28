@@ -1,23 +1,14 @@
-# Signal Monitor Frontend
+# CryptoIntel Angular frontend
 
-This is the Angular frontend for the read-only trading scanner dashboard. See the [root README](../README.md) for the phased roadmap, Firebase setup, security rules, and current Firestore data-contract assumptions.
+See the [project README](../README.md) for Firebase setup, wallet behavior, Binance API-key permissions, real-order flow, and OpenAI function setup.
 
-## Run locally
-
-The `jasperpos-dev` Firebase web app config is included in `src/environments/environment.ts`. Enable Email/Password in Firebase Authentication, then create an account from the sign-in screen. Then run:
+Run locally:
 
 ```sh
 npm install
 npm start
 ```
 
-The development server is available at `http://localhost:4200/`.
+Email/Password Firebase Authentication is required for personal data and callable functions. Binance public market data works without linking an exchange account. The app starts in simulated-wallet mode; Binance account linking and real orders require the backend functions and secrets to be deployed.
 
-## Validate
-
-```sh
-npm run build
-npx ng test --watch=false
-```
-
-Client access is read-only. No service-account credentials belong in this project.
+Market trends use Binance Spot USDT ticker and candlestick data only. Volume tiers are based on relative 24-hour quote-volume rank, not market capitalization. Binance Spot does not provide market-cap, circulating-supply, meme-token, or recently-listed metadata.

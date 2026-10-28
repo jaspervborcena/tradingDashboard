@@ -1,33 +1,20 @@
 import { Routes } from '@angular/router';
 
+const dashboard = (page: string) => ({
+  loadComponent: () => import('./dashboard-page.component').then(module => module.DashboardPage),
+  data: { page },
+});
+
 export const routes: Routes = [
-	{
-		path: 'overview',
-		loadComponent: () => import('./overview-page.component').then((module) => module.OverviewPage),
-		title: 'Overview',
-	},
-	{
-		path: 'markets',
-		loadComponent: () => import('./events-page.component').then((module) => module.EventsPage),
-		data: { kind: 'markets' },
-		title: 'Markets',
-	},
-	{
-		path: 'signals',
-		loadComponent: () => import('./events-page.component').then((module) => module.EventsPage),
-		data: { kind: 'signals' },
-		title: 'Signals',
-	},
-	{
-		path: 'system',
-		loadComponent: () => import('./system-page.component').then((module) => module.SystemPage),
-		title: 'System',
-	},
-	{
-		path: 'trades',
-		loadComponent: () => import('./trades-page.component').then((module) => module.TradesPage),
-		title: 'Trades',
-	},
-	{ path: '', pathMatch: 'full', redirectTo: 'overview' },
-	{ path: '**', redirectTo: 'overview' },
+  { path: 'overview', ...dashboard('overview'), title: 'Overview' },
+  { path: 'top-10', ...dashboard('top-10'), title: 'Top 10' },
+  { path: 'market-trends', ...dashboard('market-trends'), title: 'Market Trends' },
+  { path: 'favorites', ...dashboard('favorites'), title: 'Favorites' },
+  { path: 'portfolio', ...dashboard('portfolio'), title: 'Portfolio' },
+  { path: 'signals', ...dashboard('signals'), title: 'Trading Signals' },
+  { path: 'analytics', ...dashboard('analytics'), title: 'Analytics' },
+  { path: 'settings', ...dashboard('settings'), title: 'Settings' },
+  { path: 'coin/:symbol', ...dashboard('coin'), title: 'Coin Details' },
+  { path: '', pathMatch: 'full', redirectTo: 'overview' },
+  { path: '**', redirectTo: 'overview' },
 ];
