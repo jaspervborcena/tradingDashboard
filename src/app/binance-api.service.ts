@@ -27,32 +27,35 @@ export interface BinanceApiAccount {
   balances: BinanceBalance[];
 }
 
-export interface CoinGeckoMarketRow {
+export interface BinanceMarketTrendTicker {
   id: string;
   symbol: string;
+  base: string;
   name: string;
+  lastPrice: number;
+  priceChangePercent: number;
+  quoteVolume: number;
+  highPrice: number;
+  lowPrice: number;
   marketCap: number | null;
-  rank: number | null;
-  price: number | null;
-  change24h: number | null;
-  volume24h: number | null;
-  updatedAt: string | null;
+  marketCapRank: number | null;
+  circulatingSupply: number | null;
+  closeTime: string | null;
+  categories: string[];
+  tradeable: boolean;
+  sparkline: number[];
 }
 
-export interface CoinGeckoMarketData {
-  largeCap: CoinGeckoMarketRow[];
-  midCap: CoinGeckoMarketRow[];
-  smallCap: CoinGeckoMarketRow[];
-  meme: CoinGeckoMarketRow[];
-  newCoins: Array<{ id: string; symbol: string; name: string }>;
+export interface BinanceMarketTrendTickers {
+  source: 'CoinGecko';
   fetchedAt: string;
+  category: string | null;
+  tickers: BinanceMarketTrendTicker[];
 }
 
-export interface CryptoCategoryData {
-  tagsBySymbol: Record<string, string[]>;
-  ambiguousSymbols: string[];
-  categories: Array<{ tag: string; categoryId: string | null }>;
-  fetchedAt: string;
+export interface CoinGeckoHistory {
+  source: 'CoinGecko'; fetchedAt: string; days: number;
+  candles: Array<{time:number;open:number;high:number;low:number;close:number;volume:number;quoteVolume:number}>;
 }
 
 export interface SharedBinanceOrderRequest {
@@ -148,16 +151,17 @@ export class BinanceApiService {
     return this.get<BinanceApiAccount>('/api/binance/account');
   }
 
+  async getMarketTrendTickers(category?: string): Promise<BinanceMarketTrendTickers> {
+    return this.get<BinanceMarketTrendTickers>(`/api/market-trends/tickers${category ? `?category=${encodeURIComponent(category)}` : ''}`);
+  }
+
+  async getCoinGeckoHistory(id: string, days: number): Promise<CoinGeckoHistory> {
+    if (!/^[a-z0-9-]{1,80}$/.test(id) || ![1,7,30,90,365].includes(days)) throw new Error('Invalid CoinGecko history request.');
+    return this.get<CoinGeckoHistory>(`/api/coingecko/history/${encodeURIComponent(id)}?days=${days}`);
+  }
+
   async placeSharedOrder(order: SharedBinanceOrderRequest): Promise<SharedBinanceOrder> {
     return this.post<SharedBinanceOrder>('/api/binance/order', order);
-  }
-
-  async getMarketCapData(): Promise<CoinGeckoMarketData> {
-    return this.call<CoinGeckoMarketData>('getMarketCapData');
-  }
-
-  async getCryptoCategories(): Promise<CryptoCategoryData> {
-    return this.call<CryptoCategoryData>('getCryptoCategories');
   }
 
   async analyzeWatchlist(symbols: string[]): Promise<WatchlistAnalysis> {
@@ -165,14 +169,6 @@ export class BinanceApiService {
       throw new Error('Choose between 1 and 20 watchlist assets to analyze.');
     }
     return this.post<WatchlistAnalysis>('/api/analysis/watchlist', { symbols });
-  }
-
-  private async call<T>(name: string): Promise<T> {
-    if (!firebaseApp || !this.currentUser()) {
-      throw new Error('Sign in before requesting market data.');
-    }
-    const result = await httpsCallable<void, T>(getFunctions(firebaseApp, 'asia-east1'), name)();
-    return result.data;
   }
 
   private async get<T>(path: string): Promise<T> {

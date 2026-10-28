@@ -83,6 +83,34 @@ describe('BinanceApiService', () => {
     ]);
   });
 
+  it('gets Binance Spot tickers through the authenticated Market Trends API', async () => {
+    const marketData = {
+      source: 'Binance Spot',
+      fetchedAt: '2026-10-28T12:00:00.000Z',
+      tickers: [{
+        symbol: 'BTCUSDT',
+        lastPrice: 67000,
+        openPrice: 66000,
+        priceChangePercent: 1.25,
+        volume: 123.45,
+        quoteVolume: 12345.6,
+        highPrice: 67500,
+        lowPrice: 66000,
+        closeTime: '2026-10-28T12:00:00.000Z',
+      }],
+    };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(marketData), { status: 200 }));
+
+    await expect(service.getMarketTrendTickers()).resolves.toEqual(marketData);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://asia-east1-mytradingapp-50d29.cloudfunctions.net/binanceApi/api/market-trends/tickers',
+      expect.objectContaining({
+        method: 'GET',
+        headers: { Authorization: expect.stringMatching(/^Bearer test-firebase-id-token$/) },
+      }),
+    );
+  });
+
   it('posts the selected watchlist symbols to the analysis endpoint', async () => {
     const report = { requestId: 'request-1', overview: 'Market overview', results: [] };
     fetchMock.mockResolvedValue(new Response(JSON.stringify(report), { status: 200 }));
@@ -131,17 +159,6 @@ describe('BinanceApiService', () => {
         body: JSON.stringify(request),
       }),
     );
-  });
-
-  it('calls the CoinGecko market metadata Firebase functions in asia-east1', async () => {
-    callableMock.mockResolvedValue({ data: { fetchedAt: '2026-10-28T00:00:00Z' } });
-
-    await service.getMarketCapData();
-    await service.getCryptoCategories();
-
-    expect(getFunctionsMock).toHaveBeenNthCalledWith(1, expect.anything(), 'asia-east1');
-    expect(getFunctionsMock).toHaveBeenNthCalledWith(2, expect.anything(), 'asia-east1');
-    expect(httpsCallableMock.mock.calls.map(call => call[1])).toEqual(['getMarketCapData', 'getCryptoCategories']);
   });
 
   it('does not make a request without a signed-in Firebase user', async () => {
