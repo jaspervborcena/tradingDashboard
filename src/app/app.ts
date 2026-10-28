@@ -26,7 +26,7 @@ export class App {
   constructor() {
     inject(Router).events.pipe(filter((event) => event instanceof NavigationEnd)).subscribe((event) => {
       const path = (event as NavigationEnd).urlAfterRedirects.split('/').filter(Boolean)[0] ?? 'overview';
-      const labels: Record<string, string> = { 'market-trends': 'Market Trends', 'top-10': 'Top 10 Index', favorites: 'Watchlist', portfolio: 'Portfolio', signals: 'Trading Signals' };
+      const labels: Record<string, string> = { overview: 'Home', 'market-trends': 'Market Trends', 'top-10': 'Top 10 Index', favorites: 'Watchlist', portfolio: 'Portfolio', signals: 'Trading Signals' };
       this.pageTitle.set(labels[path] ?? path.charAt(0).toUpperCase() + path.slice(1));
     });
   }

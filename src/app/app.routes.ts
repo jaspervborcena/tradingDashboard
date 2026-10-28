@@ -6,7 +6,7 @@ const dashboard = (page: string) => ({
 });
 
 export const routes: Routes = [
-  { path: 'overview', ...dashboard('overview'), title: 'Overview' },
+  { path: 'overview', ...dashboard('overview'), title: 'Home' },
   { path: 'top-10', ...dashboard('top-10'), title: 'Top 10' },
   { path: 'market-trends', ...dashboard('market-trends'), title: 'Market Trends' },
   { path: 'favorites', ...dashboard('favorites'), title: 'Favorites' },

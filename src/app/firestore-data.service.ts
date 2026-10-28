@@ -55,6 +55,33 @@ export class FirestoreDataService {
     });
     return this.getWallet();
   }
+  async sellWithPlayFunds(id: string, quantity: number, sellPrice: number): Promise<Wallet> {
+    if (!(Number.isFinite(quantity) && quantity > 0) || !(Number.isFinite(sellPrice) && sellPrice > 0)) {
+      throw new Error('Enter a valid sell amount and price.');
+    }
+    const walletRef = doc(this.db, 'users', this.uid, 'wallet', 'main');
+    const holdingRef = doc(this.db, 'users', this.uid, 'portfolio', id);
+    await runTransaction(this.db, async transaction => {
+      const [walletSnapshot, holdingSnapshot] = await Promise.all([
+        transaction.get(walletRef),
+        transaction.get(holdingRef),
+      ]);
+      if (!holdingSnapshot.exists()) throw new Error('This portfolio entry no longer exists. Refresh and try again.');
+      const holding = holdingSnapshot.data();
+      const available = Number(holding['quantity']);
+      if (holding['source'] === 'binance') throw new Error('Binance holdings cannot be sold with play funds.');
+      if (!(Number.isFinite(available) && available > 0) || quantity > available) {
+        throw new Error('The sell amount exceeds the available holding quantity. Refresh and try again.');
+      }
+      const proceeds = quantity * sellPrice;
+      if (!Number.isFinite(proceeds) || !(proceeds > 0)) throw new Error('The sale value is invalid.');
+      const balance = Number(walletSnapshot.data()?.['balanceUsdt'] ?? 0);
+      transaction.set(walletRef, { balanceUsdt: balance + proceeds, updatedAt: new Date().toISOString() });
+      if (quantity === available) transaction.delete(holdingRef);
+      else transaction.update(holdingRef, { quantity: available - quantity });
+    });
+    return this.getWallet();
+  }
   async removeHolding(id: string): Promise<void> {
     await deleteDoc(doc(this.db, 'users', this.uid, 'portfolio', id));
   }
