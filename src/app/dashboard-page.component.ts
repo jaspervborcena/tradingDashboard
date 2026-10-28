@@ -26,8 +26,6 @@ export class DashboardPage {
   readonly candles = signal<Candle[]>([]);
   readonly orderBook = signal<OrderBook | null>(null);
   readonly trendMetrics = signal<TrendMetric[]>([]);
-  readonly categoryCoins = signal<Coin[]>([]);
-  readonly categoryLoading = signal(false);
   readonly portfolioSignals = signal<Record<string, Record<string, {signal:'BUY'|'SELL'|'HOLD'|'UNAVAILABLE'; reason:string}>>>({});
   readonly portfolioSignalsLoading = signal(false);
   readonly watchSignals = signal<Record<string,{signal:string;reason:string;ema20:number;rsi14:number}>>({});
@@ -99,7 +97,7 @@ export class DashboardPage {
       if (this.page() === 'settings') await this.refreshServerBinanceAccount();
       if (this.page() === 'coin') await this.loadCandles();
       if (this.page() === 'market-trends') {
-        this.trendFilter.set('all'); this.categoryCoins.set([]);
+        this.trendFilter.set('all');
         const metrics = await this.market.getTrendMetrics(coins);
         this.trendMetrics.set(metrics);
       }
@@ -114,7 +112,7 @@ export class DashboardPage {
     return q ? rows.filter(c => c.base.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)) : rows;
   }
   get topCoins(): Coin[] { return this.coins().slice(0, 10); }
-  get purchaseCoins(): Coin[] { return this.binanceConnected()?this.coins().filter(coin=>coin.tradeable):this.coins(); }
+  get purchaseCoins(): Coin[] { return this.coins(); }
   get portfolioPositions(): Array<{symbol:string;name:string;quantity:number;averageCost:number;price:number;value:number;cost:number;pnl:number;pnlPercent:number;dayPnl:number;allocation:number}> {
     const grouped = new Map<string,{name:string;quantity:number;cost:number}>();
     for (const holding of this.holdings()) {
@@ -141,8 +139,7 @@ export class DashboardPage {
   portfolioSignal(symbol:string,period:string): {signal:'BUY'|'SELL'|'HOLD'|'UNAVAILABLE';reason:string}|undefined { return this.portfolioSignals()[symbol]?.[period]; }
   get trendRows(): Array<{coin:Coin;metric:TrendMetric|null;volumeRank:number}> {
     const filter = this.trendFilter();
-    const source=filter.startsWith('sector-')&&this.categoryCoins().length?this.categoryCoins():this.coins();
-    const ranked = [...source].sort((a, b) => b.quoteVolume - a.quoteVolume);
+    const ranked = [...this.coins()].sort((a, b) => b.quoteVolume - a.quoteVolume);
     const metrics = new Map(this.trendMetrics().map(metric => [metric.coin.symbol, metric]));
     const rows = (coins: Coin[]) => coins.map(coin => ({
       coin,
@@ -167,7 +164,6 @@ export class DashboardPage {
       const direction = filter.slice('change-'.length);
       return rows(ranked.filter(coin => direction === 'positive' ? coin.change > 0 : coin.change < 0));
     }
-    if(filter.startsWith('sector-'))return rows(ranked.slice(0,30));
     return rows(ranked.filter(coin => coin.change > 0).sort((a, b) => b.change - a.change).slice(0, 30));
   }
   get totalValue(): number { return this.holdings().reduce((sum, h) => sum + h.quantity * (this.coin(h.symbol)?.price ?? h.buyPrice), 0); }
@@ -187,20 +183,12 @@ export class DashboardPage {
   coin(symbol: string): Coin | undefined { return this.coins().find(c => c.symbol === symbol); }
   async toggleFavorite(symbol: string): Promise<void> {
     const remove = this.favorites().includes(symbol);
-    try { await this.data.toggleFavorite(symbol, remove, this.coin(symbol)?.id); this.favorites.update(items => remove ? items.filter(item => item !== symbol) : [...items, symbol]); }
+    try { await this.data.toggleFavorite(symbol, remove); this.favorites.update(items => remove ? items.filter(item => item !== symbol) : [...items, symbol]); }
     catch (e) { this.error.set(e instanceof Error ? e.message : 'Could not update favorites.'); }
   }
-  async selectTrend(filter:string):Promise<void> {
-    const wasCategory=this.trendFilter().startsWith('sector-');this.trendFilter.set(filter);
-    if(filter.startsWith('sector-')){
-      this.categoryLoading.set(true);
-      try{const coins=await this.market.getTickers(filter.slice('sector-'.length));this.categoryCoins.set(coins);this.trendMetrics.set(await this.market.getTrendMetrics(coins));}
-      catch(error){this.error.set(error instanceof Error?error.message:'Could not load this CoinGecko category.');this.categoryCoins.set([]);}
-      finally{this.categoryLoading.set(false);}
-    }else if(wasCategory){this.categoryCoins.set([]);this.trendMetrics.set(await this.market.getTrendMetrics(this.coins()));}
-  }
-  openHolding(coin?: Coin): void { const available=this.purchaseCoins;const selected=coin&&(!this.binanceConnected()||coin.tradeable)?coin:available[0];this.selectedSymbol = selected?.symbol ?? 'BTCUSDT'; this.buyPrice = selected?.price.toString() ?? ''; this.quantity = ''; this.boughtAt = new Date().toISOString().slice(0, 10); this.orderReviewed.set(false); this.orderBook.set(null); this.showHoldingForm = true; void this.updateSelectedPrice(this.selectedSymbol); }
-  async updateSelectedPrice(symbol: string): Promise<void> { this.buyPrice = this.coin(symbol)?.price.toString() ?? ''; this.orderReviewed.set(false); if(!this.coin(symbol)?.tradeable){this.orderBook.set(null);return;} try { this.orderBook.set(await this.market.getOrderBook(symbol)); } catch (e) { this.error.set(e instanceof Error ? e.message : 'Order book is unavailable.'); } }
+  selectTrend(filter: string): void { this.trendFilter.set(filter); }
+  openHolding(coin?: Coin): void { const available=this.purchaseCoins;const selected=coin??available[0]; this.selectedSymbol = selected?.symbol ?? 'BTCUSDT'; this.buyPrice = selected?.price.toString() ?? ''; this.quantity = ''; this.boughtAt = new Date().toISOString().slice(0, 10); this.orderReviewed.set(false); this.orderBook.set(null); this.showHoldingForm = true; void this.updateSelectedPrice(this.selectedSymbol); }
+  async updateSelectedPrice(symbol: string): Promise<void> { this.buyPrice = this.coin(symbol)?.price.toString() ?? ''; this.orderReviewed.set(false); try { this.orderBook.set(await this.market.getOrderBook(symbol)); } catch (e) { this.error.set(e instanceof Error ? e.message : 'Order book is unavailable.'); } }
   async saveHolding(): Promise<void> {
     const coin = this.coin(this.selectedSymbol); const quantity = Number(this.quantity), price = Number(this.buyPrice);
     if (!coin || !(quantity > 0) || !(price > 0)) return;

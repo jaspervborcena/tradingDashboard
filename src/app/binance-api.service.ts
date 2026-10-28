@@ -27,37 +27,6 @@ export interface BinanceApiAccount {
   balances: BinanceBalance[];
 }
 
-export interface BinanceMarketTrendTicker {
-  id: string;
-  symbol: string;
-  base: string;
-  name: string;
-  lastPrice: number;
-  priceChangePercent: number;
-  quoteVolume: number;
-  highPrice: number;
-  lowPrice: number;
-  marketCap: number | null;
-  marketCapRank: number | null;
-  circulatingSupply: number | null;
-  closeTime: string | null;
-  categories: string[];
-  tradeable: boolean;
-  sparkline: number[];
-}
-
-export interface BinanceMarketTrendTickers {
-  source: 'CoinGecko';
-  fetchedAt: string;
-  category: string | null;
-  tickers: BinanceMarketTrendTicker[];
-}
-
-export interface CoinGeckoHistory {
-  source: 'CoinGecko'; fetchedAt: string; days: number;
-  candles: Array<{time:number;open:number;high:number;low:number;close:number;volume:number;quoteVolume:number}>;
-}
-
 export interface SharedBinanceOrderRequest {
   symbol: string;
   side: 'BUY' | 'SELL';
@@ -149,15 +118,6 @@ export class BinanceApiService {
 
   async getAccount(): Promise<BinanceApiAccount> {
     return this.get<BinanceApiAccount>('/api/binance/account');
-  }
-
-  async getMarketTrendTickers(category?: string): Promise<BinanceMarketTrendTickers> {
-    return this.get<BinanceMarketTrendTickers>(`/api/market-trends/tickers${category ? `?category=${encodeURIComponent(category)}` : ''}`);
-  }
-
-  async getCoinGeckoHistory(id: string, days: number): Promise<CoinGeckoHistory> {
-    if (!/^[a-z0-9-]{1,80}$/.test(id) || ![1,7,30,90,365].includes(days)) throw new Error('Invalid CoinGecko history request.');
-    return this.get<CoinGeckoHistory>(`/api/coingecko/history/${encodeURIComponent(id)}?days=${days}`);
   }
 
   async placeSharedOrder(order: SharedBinanceOrderRequest): Promise<SharedBinanceOrder> {

@@ -8,10 +8,10 @@ This document describes APIs implemented in the repository and the updated backe
 
 | UI feature | API wired in the frontend |
 |---|---|
-| Market overview and Market Trends ticker list | Authenticated `GET /api/market-trends/tickers` on `binanceApi`, which proxies CoinGecko market data. |
-| Asset charts and history | Authenticated `GET /api/coingecko/history/:id?days=...` proxies CoinGecko market chart data. |
+| Market overview, Top 10, and Market Trends ticker list | Binance Spot public REST `GET /api/v3/ticker/24hr`; no Firebase or Binance credentials are sent. |
+| Asset charts, indicators, and history | Binance Spot public REST `GET /api/v3/klines`. |
 | Order-book quote | Binance Spot public REST `GET /api/v3/depth` for top 5 bids and asks. |
-| Market Trends price changes, volume, market cap, categories, and liquidity tiers | CoinGecko market data returned by the authenticated ticker endpoint. Binance is used for tradeable-pair availability only. |
+| Market Trends price changes, USDT quote volume, ranges, and liquidity tiers | Binance Spot ticker data. Binance does not provide market capitalization or token categories. |
 | Sign-in and per-user favorites, paper portfolio, and play wallet | Firebase Authentication and direct Firestore SDK operations protected by Firestore rules; these are not REST endpoints. |
 | Linked Binance connection, disconnect, linked-account balances, and per-user real buy | Firebase callable functions: `connectBinance`, `disconnectBinance`, `getBinanceAccount`, and `buyBinanceMarket`. |
 | Binance connection status | Firebase callable `getBinanceStatus` and authenticated `GET /api/binance/status` in Settings. |
@@ -30,64 +30,34 @@ The browser sends watchlist analysis to `POST /api/analysis/watchlist`; it does 
 
 | API | Used for | Authentication |
 |---|---|---|
-| Authenticated CoinGecko proxy on Firebase HTTPS `binanceApi` | Market data and history | Firebase ID token; CoinGecko key remains server-side |
-| Binance Spot public REST API | Top 5 order book | None |
+| Binance Spot public REST API | 24-hour tickers, candlesticks, and top 5 order book | None |
 | Firebase Authentication and Cloud Firestore | Sign-in, favorites, portfolio, and simulated wallet | Firebase user session; Firestore rules scope user data |
 | Firebase callable functions in `asia-east1` | Per-user Binance account linking/status/account and buys | Signed-in Firebase user |
-| Firebase HTTPS `binanceApi` function in `asia-east1` | Shared Binance account status, balances, diagnostic IP, CoinGecko market/history proxy, watchlist analysis, and confirmed market buy/sell orders | Revocation-checked Firebase ID token |
+| Firebase HTTPS `binanceApi` function in `asia-east1` | Market Trends tickers, shared Binance account status, balances, diagnostic IP, watchlist analysis, and confirmed market buy/sell orders | Revocation-checked Firebase ID token |
 | Binance Spot signed API | Read shared account and submit confirmed real market buys/sells | Server-side Binance credentials |
 | OpenAI Responses API | Watchlist analysis | Server-side API key |
 
-## CoinGecko market data
+## Binance Spot market data
 
-`MarketDataService.getTickers()` requests the authenticated backend endpoint instead of calling Binance's all-symbol ticker endpoint from the browser:
+`MarketDataService.getTickers()` requests Binance Spot directly:
 
 ```http
-GET https://asia-east1-mytradingapp-50d29.cloudfunctions.net/binanceApi/api/market-trends/tickers
-Authorization: Bearer <Firebase ID token>
+GET https://api.binance.com/api/v3/ticker/24hr
 ```
 
-The backend verifies Firebase authentication and proxies CoinGecko `GET /coins/markets` data. It may return a cached response to stay within CoinGecko rate limits. A response has this shape:
+The frontend filters the Binance ticker response to USDT pairs and sorts them by 24-hour quote volume. This public market-data request does not need Firebase authentication or a Binance API key.
 
-```json
-{
-  "source": "CoinGecko",
-  "fetchedAt": "2026-10-28T12:00:00.000Z",
-  "category": null,
-  "tickers": [
-    {
-      "id": "bitcoin",
-      "symbol": "BTCUSDT",
-      "base": "BTC",
-      "name": "Bitcoin",
-      "lastPrice": 67000,
-      "priceChangePercent": 1.5151515151515151,
-      "quoteVolume": 8250000,
-      "highPrice": 67500,
-      "lowPrice": 65500,
-      "marketCap": 1320000000000,
-      "marketCapRank": 1,
-      "circulatingSupply": 19800000,
-      "categories": [],
-      "tradeable": true,
-      "sparkline": [66500, 67000]
-    }
-  ]
-}
-```
-
-The returned list contains CoinGecko market assets with USD prices, 24h changes, aggregate USD volume, market cap, rank, circulating supply, and 7-day sparkline data. The optional `category` query maps supported category filters to CoinGecko category IDs. `tradeable` indicates whether Binance Spot currently lists the asset's `BASEUSDT` pair. The `symbol` field is a UI/execution mapping and is not guaranteed to be a unique CoinGecko identifier; use the returned `id` for history requests. Market data is cached server-side to limit provider requests. Configure `COINGECKO_API_KEY` as a Firebase secret and keep it out of the browser bundle.
-
-CoinGecko's market chart endpoint returns sampled prices, market caps, and total volumes. The app currently adapts price samples to the chart component's candle-shaped model; those points are not exchange OHLC candles. Supported history ranges are 1, 7, 30, 90, and 365 days, subject to the selected CoinGecko API plan's rate limits and granularity.
+These are Binance-sourced 24-hour ticker facts. Quote volume is denominated in USDT for these pairs. Binance Spot does not provide market capitalization, circulating supply, token categories, or recently-listed classifications; the UI does not display those fields. No CoinGecko API key or market-metadata callable is used.
 
 ## Binance account and order APIs
 
-The Angular `MarketDataService` calls Binance Spot public `GET /api/v3/depth` directly for the top 5 bids and asks when preparing a real order. CoinGecko, not Binance, supplies all displayed price history and chart inputs.
+The Angular `MarketDataService` calls Binance Spot public REST endpoints for candlesticks and order-book data.
 
 | Request | Purpose |
 |---|---|
+| `GET /api/v3/ticker/24hr` | Loads public 24-hour ticker data directly from Binance; the UI filters USDT pairs. |
 | `GET /depth?symbol={symbol}&limit=5` | Loads the top five bids and asks for a market pair. |
-| `GET /api/coingecko/history/:id?days={days}` | Loads sampled CoinGecko market-chart history; the UI uses this for asset charts and rule-based indicators. These samples are not exchange OHLC candles. |
+| `GET /klines?symbol={symbol}&interval={interval}&limit={limit}` | Loads genuine Binance OHLC candlesticks for charts and indicators. |
 
 Trend screening currently analyzes up to 80 pairs, with up to five concurrent candle requests. EMA and RSI calculations are performed in the frontend from returned candle data.
 
@@ -104,7 +74,7 @@ The backend exports the following Firebase **callable** functions in `asia-east1
 | `buyBinanceMarket` | `{ symbol, quoteOrderQty, expectedAsk, confirmRealOrder }` | After explicit confirmation and backend checks, submits a real Binance USDT-quoted market buy and records the result in that user's portfolio. Maximum spend is 1,000 USDT per order. |
 | `analyzeWatchlist` (legacy callable) | `{ coins, requestedAt, instruction }` | Sends validated market data to OpenAI and returns `{ analysis }`. The current dashboard instead uses the HTTP analysis contract below. |
 
-CoinGecko supplies discovery, watchlist prices, market chart history, and market metadata. Binance supplies account balances, order book quotes, and confirmed Spot orders. OpenAI receives the selected watchlist assets plus CoinGecko market data and derived indicators; it does not submit orders.
+Binance Spot supplies market discovery, ticker data, candles, order books, account balances, and confirmed Spot orders. OpenAI receives the selected watchlist assets plus Binance market data and derived indicators; it does not submit orders.
 
 Real Binance buys through the user-key callable are **not simulated**. They check the reviewed ask against the live ask (maximum 1% movement), check visible top-five ask depth and available USDT plus a fee reserve, then submit a real market order. The shared-account HTTP order API below is a separate execution path and uses server-side shared credentials.
 
@@ -117,12 +87,10 @@ The Firebase HTTPS function `binanceApi` is deployed in `asia-east1`; its base U
 | `GET /ip` | Returns the function runtime's observed egress IP via ipify. This diagnostic does not guarantee a fixed IP. |
 | `GET /api/binance/status` | Returns whether the signed-in user's `users/{uid}/integrations/binance` document has `enabled: true`. This flag does not validate the shared Binance credentials. |
 | `GET /api/binance/account` | Reads the shared Binance Spot account. Returns non-zero balances with free and locked quantities, sorted by quantity sum and capped at 100. No fiat conversion is provided. |
-| `GET /api/market-trends/tickers` | Returns CoinGecko market rows with source, category, and fetch-time metadata. Use `?category=DeFi` (or another supported UI category) to filter. |
-| `GET /api/coingecko/history/:id?days=7` | Returns sampled CoinGecko price/volume history for a known market or watchlist coin. Supported `days`: 1, 7, 30, 90, 365. |
 | `POST /api/analysis/watchlist` | Analyzes 1–20 symbols from the signed-in user's saved watchlist. Request body: `{ "symbols": ["BTCUSDT"] }`; omit `symbols` to analyze the full saved watchlist if it contains at most 20 symbols. |
 | `POST /api/binance/order` | Submits an explicitly confirmed shared-account market buy or sell after checking free balance. The Settings UI calls this route after the user reviews and confirms a real order. |
 
-The analysis response contains `requestId`, `generatedAt`, `source`, `timeframe`, `informationalOnly`, `overview`, and `results`. Each result includes the symbol, trend, momentum summary, supporting indicators, risks, timeframe summaries, explanation, data completeness, and freshness metadata. Market data is fetched server-side from CoinGecko using market rows and sampled market-chart history. Partial/unavailable data is marked in the result. Backend-generated commentary is informational only.
+The analysis response contains `requestId`, `generatedAt`, `source`, `timeframe`, `informationalOnly`, `overview`, and `results`. Each result includes the symbol, trend, momentum summary, supporting indicators, risks, timeframe summaries, explanation, data completeness, and freshness metadata. Market data and candles are fetched from Binance Spot. Partial/unavailable data is marked in the result. Backend-generated commentary is informational only.
 
 The route reads the authenticated user's `watchlist` array from `users/{uid}` and verifies requested symbols against it. For existing accounts, it reconciles this field from the legacy `users/{uid}/favorites/{symbol}` documents before analysis. The frontend keeps the profile array and favorites subcollection in sync when a favorite is added or removed.
 
@@ -156,7 +124,7 @@ Successful responses contain `symbol`, `orderId`, `clientOrderId`, `side`, `type
 
 The server-side order gate is `functions/config/trading.json`. It defaults to `live_spot_orders_enabled: false`; the UI can send a reviewed order, but the backend rejects it until that flag is explicitly enabled and redeployed. Any authenticated Firebase user can submit real orders against the same account when enabled. `confirm: true` is a deliberate-submit check, not an authorization boundary. Keep withdrawals, margin, and futures permissions disabled.
 
-Market discovery and watchlist data require a CoinGecko API key stored as the `COINGECKO_API_KEY` Firebase secret. Binance data remains limited to exchange/account and order paths.
+Market discovery, ticker data, and chart history use Binance Spot public endpoints. There is no CoinGecko key or market metadata callable requirement.
 
 The watchlist analysis endpoint is the OpenAI-backed backend route `POST /api/analysis/watchlist`; the Angular app does not need an OpenAI key, does not send one, and does not expose one in the browser. `BINANCE_API_KEY` and `BINANCE_SECRET` are distinct from `BINANCE_CREDENTIALS_KEK`, which is used by per-user callable integration. The shared Binance API key needs account-read and Spot Trading permissions for account reads and orders.
 

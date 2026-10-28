@@ -25,13 +25,13 @@ export class FirestoreDataService {
     }
     return symbols;
   }
-  async toggleFavorite(symbol: string, favorite: boolean, coinGeckoId?: string): Promise<void> {
+  async toggleFavorite(symbol: string, favorite: boolean): Promise<void> {
     const userId = this.uid;
     const favoriteRef = doc(this.db, 'users', userId, 'favorites', symbol);
     const userRef = doc(this.db, 'users', userId);
     const batch = writeBatch(this.db);
     if (favorite) batch.delete(favoriteRef);
-    else batch.set(favoriteRef, { symbol, ...(coinGeckoId ? { coinGeckoId } : {}), addedAt: new Date().toISOString() });
+    else batch.set(favoriteRef, { symbol, addedAt: new Date().toISOString() });
     batch.set(userRef, { watchlist: favorite ? arrayRemove(symbol) : arrayUnion(symbol) }, { merge: true });
     await batch.commit();
   }

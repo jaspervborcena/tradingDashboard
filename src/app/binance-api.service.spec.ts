@@ -83,34 +83,6 @@ describe('BinanceApiService', () => {
     ]);
   });
 
-  it('gets Binance Spot tickers through the authenticated Market Trends API', async () => {
-    const marketData = {
-      source: 'Binance Spot',
-      fetchedAt: '2026-10-28T12:00:00.000Z',
-      tickers: [{
-        symbol: 'BTCUSDT',
-        lastPrice: 67000,
-        openPrice: 66000,
-        priceChangePercent: 1.25,
-        volume: 123.45,
-        quoteVolume: 12345.6,
-        highPrice: 67500,
-        lowPrice: 66000,
-        closeTime: '2026-10-28T12:00:00.000Z',
-      }],
-    };
-    fetchMock.mockResolvedValue(new Response(JSON.stringify(marketData), { status: 200 }));
-
-    await expect(service.getMarketTrendTickers()).resolves.toEqual(marketData);
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://asia-east1-mytradingapp-50d29.cloudfunctions.net/binanceApi/api/market-trends/tickers',
-      expect.objectContaining({
-        method: 'GET',
-        headers: { Authorization: expect.stringMatching(/^Bearer test-firebase-id-token$/) },
-      }),
-    );
-  });
-
   it('posts the selected watchlist symbols to the analysis endpoint', async () => {
     const report = { requestId: 'request-1', overview: 'Market overview', results: [] };
     fetchMock.mockResolvedValue(new Response(JSON.stringify(report), { status: 200 }));
