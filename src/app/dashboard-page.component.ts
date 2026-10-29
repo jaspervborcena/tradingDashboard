@@ -33,6 +33,9 @@ export class DashboardPage {
   readonly walletBalance = signal(0);
   readonly binanceConnected = signal(false);
   readonly binanceBalances = signal<Array<{asset:string;free:number;locked:number}>>([]);
+  readonly binanceBalancesSyncedAt = signal<string | null>(null);
+  readonly binanceSyncLoading = signal(false);
+  readonly binanceSyncError = signal('');
   readonly serverBinanceStatus = signal<BinanceApiStatus | null>(null);
   readonly serverBinanceAccount = signal<BinanceApiAccount | null>(null);
   readonly serverBinanceStatusError = signal('');
@@ -92,7 +95,12 @@ export class DashboardPage {
       const [coins, favorites, holdings, wallet] = await Promise.all([this.market.getTickers(), this.data.getFavorites(), this.data.getHoldings(), this.data.getWallet()]);
       this.coins.set(coins); this.favorites.set(favorites); this.holdings.set(holdings); this.walletBalance.set(wallet.balanceUsdt);
       if (this.page() === 'overview') await this.loadPortfolioSignals();
-      try { const status = await this.binanceApi.getStatus(); this.binanceConnected.set(status.connected); if (status.connected) await this.refreshBinanceAccount(); }
+      try {
+        const status = await this.binanceApi.getStatus();
+        this.binanceConnected.set(status.connected);
+        if (status.connected && this.page() === 'portfolio') await this.refreshBinanceAccount();
+        else if (!status.connected) { this.binanceBalances.set([]); this.binanceBalancesSyncedAt.set(null); }
+      }
       catch (error) { this.integrationError.set(error instanceof Error ? error.message : 'Binance link status is unavailable.'); }
       if (this.page() === 'settings') await this.refreshServerBinanceAccount();
       if (this.page() === 'coin') await this.loadCandles();
@@ -113,6 +121,40 @@ export class DashboardPage {
   }
   get topCoins(): Coin[] { return this.coins().slice(0, 10); }
   get purchaseCoins(): Coin[] { return this.coins(); }
+  get hasSyncedBinanceBalances(): boolean { return this.binanceBalancesSyncedAt() !== null; }
+  get portfolioTradeEntries(): Holding[] {
+    return this.hasSyncedBinanceBalances
+      ? this.holdings().filter(holding => holding.source !== 'binance')
+      : this.holdings();
+  }
+  get importedBinanceBalances(): Array<{asset:string;free:number;locked:number}> {
+    return this.hasSyncedBinanceBalances
+      ? this.binanceBalances().filter(balance => balance.free + balance.locked > 0)
+      : [];
+  }
+  binanceBalancePrice(asset: string): number | null {
+    return asset === 'USDT' ? 1 : this.coin(`${asset}USDT`)?.price ?? null;
+  }
+  get portfolioValue(): number {
+    const recordedValue = this.portfolioTradeEntries.reduce(
+      (sum, holding) => sum + holding.quantity * (this.coin(holding.symbol)?.price ?? holding.buyPrice),
+      0,
+    );
+    const importedValue = this.importedBinanceBalances.reduce((sum, balance) => {
+      const price = this.binanceBalancePrice(balance.asset);
+      return sum + (price === null ? 0 : (balance.free + balance.locked) * price);
+    }, 0);
+    return recordedValue + importedValue;
+  }
+  get portfolioInvested(): number {
+    return this.portfolioTradeEntries.reduce((sum, holding) => sum + holding.quantity * holding.buyPrice, 0);
+  }
+  get portfolioPnl(): number {
+    return this.portfolioTradeEntries.reduce(
+      (sum, holding) => sum + holding.quantity * ((this.coin(holding.symbol)?.price ?? holding.buyPrice) - holding.buyPrice),
+      0,
+    );
+  }
   get portfolioPositions(): Array<{symbol:string;name:string;quantity:number;averageCost:number;price:number;value:number;cost:number;pnl:number;pnlPercent:number;dayPnl:number;allocation:number}> {
     const grouped = new Map<string,{name:string;quantity:number;cost:number}>();
     for (const holding of this.holdings()) {
@@ -328,14 +370,35 @@ export class DashboardPage {
   private sharedOrderSuccessMessage(result: SharedBinanceOrder): string {
     return `${result.replayed ? 'Previously completed order confirmed' : 'Order accepted'}: ${result.side} ${result.symbol}, status ${result.status}, filled ${result.executedQty} for ${result.cummulativeQuoteQty} USDT.`;
   }
-  async refreshBinanceAccount(): Promise<void> { const result = await this.call<{}, {connected:boolean;balances:Array<{asset:string;free:number;locked:number}>}>('getBinanceAccount', {}); this.binanceConnected.set(result.connected); this.binanceBalances.set(result.balances ?? []); }
+  async refreshBinanceAccount(): Promise<void> {
+    this.binanceSyncLoading.set(true);
+    this.binanceSyncError.set('');
+    try {
+      const result = await this.binanceApi.syncBinancePortfolio();
+      this.binanceConnected.set(result.connected);
+      this.binanceBalances.set(result.balances);
+      this.binanceBalancesSyncedAt.set(result.syncedAt);
+    } catch (error) {
+      this.binanceSyncError.set(error instanceof Error ? error.message : 'Could not sync Binance balances.');
+      throw error;
+    } finally {
+      this.binanceSyncLoading.set(false);
+    }
+  }
+  async syncBinancePortfolio(): Promise<void> {
+    try {
+      await this.refreshBinanceAccount();
+    } catch {
+      this.integrationError.set(this.binanceSyncError());
+    }
+  }
   async connectBinance(): Promise<void> {
     this.connectionBusy.set(true); this.connectionMessage.set(''); this.integrationError.set('');
     try { await this.call<{apiKey:string;apiSecret:string},{connected:boolean}>('connectBinance', {apiKey:this.binanceApiKey.trim(),apiSecret:this.binanceApiSecret.trim()}); this.binanceApiKey=''; this.binanceApiSecret=''; this.binanceConnected.set(true); await this.refreshBinanceAccount(); this.connectionMessage.set('Binance is connected. Check balances and API permissions before trading.'); }
     catch (e) { this.integrationError.set(e instanceof Error ? e.message : 'Could not connect Binance.'); }
     finally { this.connectionBusy.set(false); }
   }
-  async disconnectBinance(): Promise<void> { this.connectionBusy.set(true); try { await this.call<{}, {connected:boolean}>('disconnectBinance', {}); this.binanceConnected.set(false); this.binanceBalances.set([]); this.connectionMessage.set('Binance was disconnected.'); } catch (e) { this.integrationError.set(e instanceof Error ? e.message : 'Could not disconnect Binance.'); } finally { this.connectionBusy.set(false); } }
+  async disconnectBinance(): Promise<void> { this.connectionBusy.set(true); try { await this.call<{}, {connected:boolean}>('disconnectBinance', {}); this.binanceConnected.set(false); this.binanceBalances.set([]); this.binanceBalancesSyncedAt.set(null); this.connectionMessage.set('Binance was disconnected.'); } catch (e) { this.integrationError.set(e instanceof Error ? e.message : 'Could not disconnect Binance.'); } finally { this.connectionBusy.set(false); } }
   reviewRealBuy(): void { const spend=Number(this.orderSpend); if (!(spend>0&&spend<=1000)) { this.error.set('Enter a buy amount from 0.01 to 1,000 USDT.'); return; } if (spend*1.01>this.binanceUsdt) { this.error.set('Your available Binance USDT does not cover this buy and the fee reserve.'); return; } if (!this.orderBook()?.asks[0]) { this.error.set('Load a current ask quote before reviewing the buy.'); return; } this.error.set(''); this.orderReviewed.set(true); }
   async submitRealBuy(): Promise<void> { this.orderBusy.set(true); this.error.set(''); try { const result=await this.call<{symbol:string;quoteOrderQty:number;expectedAsk:number;confirmRealOrder:boolean},{symbol:string;quantity:number;buyPrice:number;quoteSpent:number;orderId:number|string;status:string}>('buyBinanceMarket',{symbol:this.selectedSymbol,quoteOrderQty:Number(this.orderSpend),expectedAsk:this.orderBook()?.asks[0]?.price ?? 0,confirmRealOrder:true}); this.orderReviewed.set(false); this.showHoldingForm=false; await Promise.all([this.refresh(),this.refreshBinanceAccount()]); this.connectionMessage.set(`Binance buy filled: ${result.quantity} ${result.symbol.replace('USDT','')} at ${this.format(result.buyPrice)} USDT.`); } catch(e) { this.error.set(e instanceof Error ? e.message : 'Binance order failed. Check your Binance order history before retrying.'); } finally { this.orderBusy.set(false); } }
   async loadCandles(): Promise<void> { try { this.candles.set(await this.market.getCandles(this.coinSymbol(), this.interval())); } catch (e) { this.error.set(e instanceof Error ? e.message : 'Could not load price history.'); } }

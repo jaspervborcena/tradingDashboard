@@ -50,6 +50,20 @@ describe('BinanceApiService', () => {
     expect(callableMock).toHaveBeenCalledOnce();
   });
 
+  it('syncs the signed-in user Binance balances through the regional callable', async () => {
+    const snapshot = {
+      connected: true as const,
+      balances: [{ asset: 'BTC', free: 0.125, locked: 0 }],
+      syncedAt: '2026-10-29T05:30:00.000Z',
+    };
+    callableMock.mockResolvedValue({ data: snapshot });
+
+    await expect(service.syncBinancePortfolio()).resolves.toEqual(snapshot);
+    expect(getFunctionsMock.mock.calls[0]?.[1]).toBe('asia-east1');
+    expect(httpsCallableMock.mock.calls[0]?.[1]).toBe('getBinanceAccount');
+    expect(callableMock).toHaveBeenCalledOnce();
+  });
+
   it('returns shared Binance balances without converting asset quantities', async () => {
     const account = {
       connected: true,

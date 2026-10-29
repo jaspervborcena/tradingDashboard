@@ -27,6 +27,10 @@ export interface BinanceApiAccount {
   balances: BinanceBalance[];
 }
 
+export interface BinancePortfolioSync extends BinanceApiAccount {
+  syncedAt: string;
+}
+
 export interface SharedBinanceOrderRequest {
   symbol: string;
   side: 'BUY' | 'SELL';
@@ -118,6 +122,17 @@ export class BinanceApiService {
 
   async getAccount(): Promise<BinanceApiAccount> {
     return this.get<BinanceApiAccount>('/api/binance/account');
+  }
+
+  async syncBinancePortfolio(): Promise<BinancePortfolioSync> {
+    if (!firebaseApp || !this.currentUser()) {
+      throw new Error('Sign in before syncing your Binance portfolio.');
+    }
+    const result = await httpsCallable<void, BinancePortfolioSync>(
+      getFunctions(firebaseApp, 'asia-east1'),
+      'getBinanceAccount',
+    )();
+    return result.data;
   }
 
   async placeSharedOrder(order: SharedBinanceOrderRequest): Promise<SharedBinanceOrder> {

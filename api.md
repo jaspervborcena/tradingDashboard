@@ -70,13 +70,15 @@ The backend exports the following Firebase **callable** functions in `asia-east1
 | `getBinanceStatus` | `{}` | `{ connected: boolean }` for the signed-in user's linked Binance credentials. |
 | `connectBinance` | `{ apiKey, apiSecret }` | Verifies the key with Binance, encrypts and stores credentials for that user, and returns `{ connected, assetCount }`. |
 | `disconnectBinance` | `{}` | Deletes that user's Binance integration and returns `{ connected: false }`. |
-| `getBinanceAccount` | `{}` | Returns `{ connected, balances }`; balances include non-zero `asset`, `free`, and `locked` amounts, sorted by balance and limited to 50. |
+| `getBinanceAccount` | `{}` | Fetches the signed-in user's linked Binance Spot balances, saves a fresh snapshot at `users/{uid}/portfolio_binance_sync/current`, and returns `{ connected, balances, syncedAt }`. Includes each non-zero `asset`, `free`, and `locked` amount; refresh replaces the previous snapshot. |
 | `buyBinanceMarket` | `{ symbol, quoteOrderQty, expectedAsk, confirmRealOrder }` | After explicit confirmation and backend checks, submits a real Binance USDT-quoted market buy and records the result in that user's portfolio. Maximum spend is 1,000 USDT per order. |
 | `analyzeWatchlist` (legacy callable) | `{ coins, requestedAt, instruction }` | Sends validated market data to OpenAI and returns `{ analysis }`. The current dashboard instead uses the HTTP analysis contract below. |
 
 Binance Spot supplies market discovery, ticker data, candles, order books, account balances, and confirmed Spot orders. OpenAI receives the selected watchlist assets plus Binance market data and derived indicators; it does not submit orders.
 
 Real Binance buys through the user-key callable are **not simulated**. They check the reviewed ask against the live ask (maximum 1% movement), check visible top-five ask depth and available USDT plus a fee reserve, then submit a real market order. The shared-account HTTP order API below is a separate execution path and uses server-side shared credentials.
+
+Loading or refreshing the Portfolio page, clicking **Refresh and sync**, or clicking **Refresh** in the Portfolio Value card reloads market prices and calls `getBinanceAccount`. The callable uses only the signed-in user's encrypted Binance credentials, then replaces that user's Firestore snapshot at `users/{uid}/portfolio_binance_sync/current`. It does not create simulated purchases, change wallet funds, or modify Binance order records. Synced balances appear in the Portfolio holdings table as read-only Binance balance rows, with unknown cost basis and no P&L. While a snapshot is active, recorded Binance buy entries are hidden from that table to avoid counting the same assets twice; simulated holdings remain unchanged. Current values are estimates using available Binance USDT ticker prices. Disconnecting Binance removes the saved snapshot and restores the recorded trade entries to the table.
 
 ## Shared Binance HTTP API
 
